@@ -438,6 +438,13 @@ async def cad_bulk_enrich(payload: ScrapeRequest):
         cursor = db.properties.find({"county": county}, {"_id": 0})
         async for doc in cursor:
             total += 1
+            # Always set at least the search URL + source + timestamp
+            from cad_scrapers import cad_url_for, cad_source_name
+            base_update = {
+                "cad_search_url": cad_url_for(county, doc.get("address")),
+                "cad_data_source": cad_source_name(county) or doc.get("cad_data_source"),
+                "cad_enriched_at": datetime.now(timezone.utc).isoformat(),
+            }
             try:
                 update = await enrich_property_from_cad(doc)
                 update_clean = {k: v for k, v in update.items() if v is not None}
@@ -447,8 +454,12 @@ async def cad_bulk_enrich(payload: ScrapeRequest):
                         store["cad_enriched_at"] = store["cad_enriched_at"].isoformat()
                     await db.properties.update_one({"id": doc["id"]}, {"$set": store})
                     enriched += 1
+                else:
+                    await db.properties.update_one({"id": doc["id"]}, {"$set": base_update})
             except Exception:
                 failed += 1
+                # Still save the base verification info
+                await db.properties.update_one({"id": doc["id"]}, {"$set": base_update})
     return {
         "counties": payload.counties,
         "properties_processed": total,
