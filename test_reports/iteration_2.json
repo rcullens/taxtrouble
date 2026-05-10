@@ -1,0 +1,43 @@
+{
+  "summary": "CAD enrichment backend testing complete. 10/10 new CAD tests passed plus 22/22 regression tests from iteration 1 — total 32/32. Verified GET /api/cad/sources, POST /api/properties/{id}/cad-enrich, POST /api/cad/bulk-enrich, the CAD overlay on all 36 seeded properties (Hill deed refs from PDF, McLennan year_built/sqft/appraised_value, Bosque appraised_value), cad_search_url auto-population, and the extended Property model schema. Live Playwright CAD scraping is best-effort; cad-enrich endpoint always returns 200 with cad_search_url, cad_data_source, cad_enriched_at as designed even when the BIS Consultants eSearch yields no live data.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "/api/cad/bulk-enrich", "issue": "Iterates Playwright launches serially in the request thread. For a county with 15 properties this can take ~3 minutes - risk of ingress timeout on large counties. Consider background ScrapeJob pattern."},
+      {"endpoint": "/api/cad/bulk-enrich", "issue": "On exception per-property, only `failed` is incremented; the URL/source/timestamp the helper would have produced is also dropped. Consider still saving the search URL even on failure."},
+      {"endpoint": "/api/properties/{id}/cad-enrich", "issue": "From iteration 1 still applies: missing-auth returns 403 not 401 (HTTPBearer default). Cosmetic."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_cad.py",
+    "/app/backend/tests/backend_test.py",
+    "/app/test_reports/pytest/pytest_cad_results.xml",
+    "/app/test_reports/pytest/pytest_results.xml"
+  ],
+  "action_items": [
+    "Consider moving /api/cad/bulk-enrich behind a ScrapeJob/background task to avoid long-running synchronous Playwright loops on bigger counties.",
+    "On per-property bulk-enrich failure, still upsert cad_search_url + cad_data_source so users can verify in browser even when live fetch errors.",
+    "Carry-over from iteration 1: derive new_this_week from scraped_at; switch deprecated on_event hooks to lifespan; widen DataSource Literal (now a free-form str — fixed since iteration 1)."
+  ],
+  "critical_code_review_comments": [
+    "cad_scrapers.cad_url_for() strips the street number and uses just the longest token (e.g. '919 E Dee St' -> 'Dee') — this can produce ambiguous CAD searches in cities with many similarly-named streets. Consider preserving the street_number alongside the StreetName param when both available, e.g. StreetNumber=919&StreetName=Dee.",
+    "cad_scrapers._live_cad_fetch hard-codes executable_path='/root/bin/chromium' with a try/except fallback — fine for now, but should come from an env var or use playwright's default to avoid surprise failures across environments.",
+    "cad_overlay.CAD_OVERLAY couples test/seed data with production code; OK for MVP but should move to seed_data.py or a JSON asset to prevent drift.",
+    "cad_scrapers._parse_cad_detail_text regex for 'Market Value' will also match 'Land Market Value' first and stop early — appraised_value might be assigned the wrong field for some CAD layouts. Consider anchored / negative-lookahead patterns."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_cad.py"
+  ],
+  "success_rate": {"backend": "100% (32/32 - 10 new CAD + 22 regression)", "frontend": "N/A - not requested"},
+  "test_credentials": "Uses dynamic tester+<uuid>@lien.tx for auth fixtures; CAD tests do not require auth.",
+  "seed_data_creation": "Relies on existing 36-property seed (Hill=12, Bosque=9, McLennan=15) now augmented with CAD overlay fields. No new seed data created by tests.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Run `pytest /app/backend/tests/ -v` to execute both backend_test.py (22) and test_cad.py (10). CAD live enrichment uses Playwright (~5s per property in headless mode) and is best-effort — anti-bot on BIS Consultants eSearch may prevent fresh data, but endpoints always return 200 with cad_search_url/cad_data_source/cad_enriched_at. The bulk-enrich test uses Bosque County (9 props) intentionally to stay under timeout; do not switch it to a larger county without raising the timeout.",
+  "rca of the issue": "No issues found."
+}

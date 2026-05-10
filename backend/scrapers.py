@@ -22,6 +22,8 @@ from seed_data import (
     MCLENNAN_COUNTY_PROPERTIES,
     COUNTY_SOURCES,
 )
+from cad_overlay import CAD_OVERLAY
+from cad_scrapers import cad_url_for
 
 logger = logging.getLogger(__name__)
 
@@ -34,8 +36,11 @@ HEADERS = {
 
 
 def _normalize(record: dict, county: str) -> dict:
-    """Merge default county metadata into a raw record."""
+    """Merge default county metadata + CAD overlay into a raw record."""
     meta = COUNTY_SOURCES.get(county, {})
+    cad_extra = dict(CAD_OVERLAY.get(record.get("parcel_id"), {}))
+    if "deed_source" in cad_extra:
+        cad_extra["cad_data_source"] = cad_extra.pop("deed_source")
     return {
         "county": county,
         "state": "TX",
@@ -46,8 +51,10 @@ def _normalize(record: dict, county: str) -> dict:
         "source_doc": meta.get("source_doc"),
         "sale_location": meta.get("sale_location"),
         "sale_date": meta.get("sale_date"),
+        "cad_search_url": cad_url_for(county, record.get("address")),
         "last_updated": datetime.now(timezone.utc),
         "scraped_at": datetime.now(timezone.utc),
+        **cad_extra,
         **record,
     }
 

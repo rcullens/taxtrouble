@@ -47,6 +47,7 @@ from models import (
 )
 from ai_service import generate_property_insights, parse_natural_language_query
 from scrapers import scrape_county
+from cad_scrapers import enrich_property_from_cad, CAD_SOURCES
 from seed_data import AVAILABLE_COUNTIES, COUNTY_SOURCES
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
@@ -396,6 +397,64 @@ async def trigger_scrape(payload: ScrapeRequest):
 async def list_scrape_jobs(limit: int = 20):
     cursor = db.scrape_jobs.find({}, {"_id": 0}).sort("started_at", -1).limit(limit)
     return {"items": [d async for d in cursor]}
+
+
+# =============== CAD (County Appraisal District) ===============
+@api.get("/cad/sources")
+async def cad_sources():
+    """Return CAD eSearch URLs available for enrichment."""
+    return {
+        "sources": [
+            {"county": county, **src} for county, src in CAD_SOURCES.items()
+        ]
+    }
+
+
+@api.post("/properties/{property_id}/cad-enrich")
+async def cad_enrich_property(property_id: str):
+    """Run a best-effort live CAD lookup for a single property."""
+    doc = await db.properties.find_one({"id": property_id}, {"_id": 0})
+    if not doc:
+        raise HTTPException(status_code=404, detail="Property not found")
+    update = await enrich_property_from_cad(doc)
+    # Drop None values so existing data isn't clobbered
+    update_clean = {k: v for k, v in update.items() if v is not None}
+    if update_clean:
+        store = dict(update_clean)
+        if isinstance(store.get("cad_enriched_at"), datetime):
+            store["cad_enriched_at"] = store["cad_enriched_at"].isoformat()
+        await db.properties.update_one({"id": property_id}, {"$set": store})
+        doc.update(store)
+    return _serialize_property(doc)
+
+
+@api.post("/cad/bulk-enrich")
+async def cad_bulk_enrich(payload: ScrapeRequest):
+    """Run CAD enrichment for every property in the given counties (best-effort)."""
+    total = 0
+    enriched = 0
+    failed = 0
+    for county in payload.counties:
+        cursor = db.properties.find({"county": county}, {"_id": 0})
+        async for doc in cursor:
+            total += 1
+            try:
+                update = await enrich_property_from_cad(doc)
+                update_clean = {k: v for k, v in update.items() if v is not None}
+                if update_clean:
+                    store = dict(update_clean)
+                    if isinstance(store.get("cad_enriched_at"), datetime):
+                        store["cad_enriched_at"] = store["cad_enriched_at"].isoformat()
+                    await db.properties.update_one({"id": doc["id"]}, {"$set": store})
+                    enriched += 1
+            except Exception:
+                failed += 1
+    return {
+        "counties": payload.counties,
+        "properties_processed": total,
+        "properties_enriched": enriched,
+        "properties_failed": failed,
+    }
 
 
 # =============== Dashboard stats ===============

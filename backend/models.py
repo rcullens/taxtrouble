@@ -80,6 +80,22 @@ class Property(BaseModel):
     source_url: Optional[str] = None
     source_doc: Optional[str] = None
 
+    # CAD (County Appraisal District) enrichment fields
+    appraised_value: Optional[float] = None  # CAD market appraisal
+    improvement_value: Optional[float] = None  # value of buildings
+    land_value: Optional[float] = None  # value of land alone
+    sqft: Optional[int] = None
+    bedrooms: Optional[int] = None
+    bathrooms: Optional[float] = None
+    deed_reference: Optional[str] = None  # e.g. "V917/P8"
+    deed_date: Optional[str] = None
+    owner_mailing_address: Optional[str] = None
+    exemptions: List[str] = Field(default_factory=list)
+    cad_property_url: Optional[str] = None
+    cad_search_url: Optional[str] = None
+    cad_data_source: Optional[str] = None  # eg "Hill CAD eSearch", "PDF Notice"
+    cad_enriched_at: Optional[datetime] = None
+
     # AI fields
     ai_score: Optional[int] = None  # 0-100 investment score
     ai_grade: Optional[Literal["A", "B", "C", "D", "F"]] = None

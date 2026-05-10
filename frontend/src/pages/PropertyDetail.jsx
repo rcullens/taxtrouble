@@ -4,7 +4,7 @@ import api from "../lib/api";
 import Header from "../components/Header";
 import { fmtUSD, fmtUSDPrecise, propertyTypeLabel, taxStatusLabel, fmtNum } from "../lib/format";
 import {
-  ArrowLeft, Sparkle, MapPin, Buildings, Warning, FileText, CheckCircle, XCircle, LinkSimple, Spinner,
+  ArrowLeft, Sparkle, MapPin, Buildings, Warning, FileText, CheckCircle, XCircle, LinkSimple, Spinner, House, Stack,
 } from "@phosphor-icons/react";
 import { toast } from "sonner";
 
@@ -13,6 +13,7 @@ export default function PropertyDetail() {
   const nav = useNavigate();
   const [prop, setProp] = useState(null);
   const [aiBusy, setAiBusy] = useState(false);
+  const [cadBusy, setCadBusy] = useState(false);
   const [error, setError] = useState(null);
 
   useEffect(() => {
@@ -36,6 +37,19 @@ export default function PropertyDetail() {
       toast.error("AI failed: " + (err.response?.data?.detail || "try again"));
     } finally {
       setAiBusy(false);
+    }
+  };
+
+  const runCAD = async () => {
+    setCadBusy(true);
+    try {
+      const { data } = await api.post(`/properties/${id}/cad-enrich`);
+      setProp(data);
+      toast.success("CAD enrichment complete");
+    } catch (err) {
+      toast.error("CAD enrichment failed: " + (err.response?.data?.detail || "try again"));
+    } finally {
+      setCadBusy(false);
     }
   };
 
@@ -207,6 +221,96 @@ export default function PropertyDetail() {
                         </ul>
                       </div>
                     </div>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* CAD Data */}
+            <div className="swiss-card-strong overflow-hidden">
+              <div className="bg-inverse text-white px-7 py-4 flex items-center justify-between">
+                <div className="flex items-center gap-2.5">
+                  <Stack size={20} weight="duotone" color="#FFFFFF" />
+                  <div>
+                    <div className="overline" style={{ color: "rgba(255,255,255,0.6)" }}>
+                      County Appraisal District
+                    </div>
+                    <div className="text-sm font-semibold mt-0.5">
+                      {prop.cad_data_source || prop.county + " CAD"}
+                    </div>
+                  </div>
+                </div>
+                <button
+                  onClick={runCAD}
+                  disabled={cadBusy}
+                  className="btn-primary inline-flex items-center gap-2 text-sm bg-white text-ink hover:bg-[#F4F4F5]"
+                  data-testid="cad-enrich-btn"
+                >
+                  {cadBusy ? <Spinner size={14} className="animate-spin" /> : <House size={14} weight="fill" />}
+                  {cadBusy ? "Fetching..." : "Pull Live CAD"}
+                </button>
+              </div>
+              <div className="p-7">
+                {cadBusy && (
+                  <>
+                    <div className="ai-loader mb-3" />
+                    <p className="text-sm text-ink-secondary">
+                      Hitting {prop.county.replace(" County", "")} CAD eSearch via headless browser. May take 10-15 seconds.
+                    </p>
+                  </>
+                )}
+
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-px bg-default border border-default">
+                  {[
+                    { label: "Appraised Value", val: fmtUSD(prop.appraised_value) },
+                    { label: "Land Value", val: fmtUSD(prop.land_value) },
+                    { label: "Improvement Value", val: fmtUSD(prop.improvement_value) },
+                    { label: "Year Built", val: prop.year_built || "—" },
+                    { label: "Living Sqft", val: prop.sqft ? fmtNum(prop.sqft) : "—" },
+                    { label: "Deed Reference", val: prop.deed_reference || "—" },
+                  ].map((m) => (
+                    <div key={m.label} className="bg-white p-4">
+                      <div className="overline mb-1.5">{m.label}</div>
+                      <div className="font-mono text-base font-semibold text-ink">{m.val}</div>
+                    </div>
+                  ))}
+                </div>
+
+                {prop.exemptions && prop.exemptions.length > 0 && (
+                  <div className="mt-5">
+                    <div className="overline mb-2">Exemptions on file</div>
+                    <div className="flex flex-wrap gap-1.5">
+                      {prop.exemptions.map((e) => (
+                        <span key={e} className="badge badge-success">{e}</span>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {(prop.cad_search_url || prop.cad_property_url) && (
+                  <div className="mt-5 pt-5 border-t border-default flex flex-col sm:flex-row gap-3 text-sm">
+                    {prop.cad_property_url ? (
+                      <a
+                        href={prop.cad_property_url}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="btn-outline inline-flex items-center gap-1.5 text-xs"
+                        data-testid="cad-property-link"
+                      >
+                        <LinkSimple size={12} /> Open exact CAD record
+                      </a>
+                    ) : null}
+                    {prop.cad_search_url && (
+                      <a
+                        href={prop.cad_search_url}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="btn-outline inline-flex items-center gap-1.5 text-xs"
+                        data-testid="cad-search-link"
+                      >
+                        <LinkSimple size={12} /> Search on {prop.county.replace(" County", "")} CAD
+                      </a>
+                    )}
                   </div>
                 )}
               </div>

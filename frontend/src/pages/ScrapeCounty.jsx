@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import api from "../lib/api";
 import Header from "../components/Header";
-import { CheckCircle, Spinner, Warning, ArrowRight, MapPin, ArrowsClockwise } from "@phosphor-icons/react";
+import { CheckCircle, Spinner, Warning, ArrowRight, MapPin, ArrowsClockwise, House } from "@phosphor-icons/react";
 import { toast } from "sonner";
 import { useNavigate } from "react-router-dom";
 
@@ -10,7 +10,9 @@ export default function ScrapeCounty() {
   const [counties, setCounties] = useState({ presupported: [], available: [] });
   const [selected, setSelected] = useState([]);
   const [busy, setBusy] = useState(false);
+  const [cadBusy, setCadBusy] = useState(false);
   const [lastResults, setLastResults] = useState(null);
+  const [cadResult, setCadResult] = useState(null);
   const [jobs, setJobs] = useState([]);
 
   useEffect(() => {
@@ -38,6 +40,26 @@ export default function ScrapeCounty() {
       toast.error("Scrape failed");
     } finally {
       setBusy(false);
+    }
+  };
+
+  const runCadEnrich = async () => {
+    if (selected.length === 0) {
+      toast.error("Pick at least one county");
+      return;
+    }
+    setCadBusy(true);
+    setCadResult(null);
+    try {
+      const { data } = await api.post("/cad/bulk-enrich", { counties: selected });
+      setCadResult(data);
+      toast.success(
+        `CAD enrich — ${data.properties_enriched}/${data.properties_processed} properties enriched`
+      );
+    } catch (err) {
+      toast.error("CAD bulk-enrich failed");
+    } finally {
+      setCadBusy(false);
     }
   };
 
@@ -214,11 +236,41 @@ export default function ScrapeCounty() {
                   </>
                 ) : (
                   <>
-                    <ArrowsClockwise size={16} weight="bold" /> Start Scrape
+                    <ArrowsClockwise size={16} weight="bold" /> Start Tax-Sale Scrape
                   </>
                 )}
               </button>
               {busy && <div className="ai-loader mt-4" />}
+
+              <button
+                onClick={runCadEnrich}
+                disabled={cadBusy || selected.length === 0}
+                className="btn-outline w-full flex items-center justify-center gap-2 mt-3"
+                data-testid="run-cad-enrich-btn"
+              >
+                {cadBusy ? (
+                  <>
+                    <Spinner size={16} className="animate-spin" /> Enriching from CAD...
+                  </>
+                ) : (
+                  <>
+                    <House size={16} weight="bold" /> Enrich from CAD
+                  </>
+                )}
+              </button>
+              {cadBusy && <div className="ai-loader mt-3" />}
+
+              {cadResult && (
+                <div className="mt-4 p-3 swiss-card text-xs space-y-1">
+                  <div className="overline">Last CAD Enrich</div>
+                  <div className="font-mono">
+                    {cadResult.properties_enriched}/{cadResult.properties_processed} enriched
+                  </div>
+                  {cadResult.properties_failed > 0 && (
+                    <div className="text-danger">{cadResult.properties_failed} failed</div>
+                  )}
+                </div>
+              )}
 
               {jobs.length > 0 && (
                 <div className="mt-6 pt-5 border-t border-default">
