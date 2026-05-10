@@ -1,0 +1,160 @@
+{
+  "project_name": "Texas Back Taxes and HOA Liens Property Scraper App",
+  "theme": "LIGHT",
+  "archetype": "4 (Swiss & High-Contrast)",
+  "rationale": "As an AI-driven real estate investment dashboard targeting distressed properties, users need authority, clarity, and precision. The Swiss & High-Contrast archetype eliminates fluff, prioritizing data density and actionable insights. We avoid generic 'SaaS Blue' in favor of International Klein Blue for AI interactions, and Signal Red for distress markers (back taxes/liens).",
+  
+  "colors": {
+    "background": {
+      "default": "#FFFFFF",
+      "subtle": "#F9FAFB",
+      "muted": "#F4F4F5",
+      "inverse": "#09090B"
+    },
+    "text": {
+      "primary": "#09090B",
+      "secondary": "#52525B",
+      "tertiary": "#A1A1AA",
+      "inverse": "#FFFFFF",
+      "brand": "#002FA7"
+    },
+    "border": {
+      "default": "#E4E4E7",
+      "strong": "#18181B",
+      "focus": "#002FA7"
+    },
+    "accents": {
+      "primary": "#002FA7",
+      "primary_hover": "#00227A",
+      "danger": "#FF3333",
+      "danger_hover": "#CC2929",
+      "warning": "#FFD600",
+      "warning_text": "#7A6600",
+      "success": "#00C853"
+    },
+    "ai_surface": {
+      "background": "#F0F4FF",
+      "border": "#002FA7",
+      "text": "#001D66"
+    }
+  },
+
+  "typography": {
+    "fonts": {
+      "heading": "'Clash Display', 'Cabinet Grotesk', sans-serif",
+      "body": "'IBM Plex Sans', sans-serif",
+      "mono": "'JetBrains Mono', 'IBM Plex Mono', monospace"
+    },
+    "scales": {
+      "h1": "text-4xl sm:text-5xl font-semibold tracking-tighter leading-none",
+      "h2": "text-2xl sm:text-3xl font-medium tracking-tight",
+      "h3": "text-xl sm:text-2xl font-medium tracking-tight",
+      "h4": "text-lg sm:text-xl font-medium",
+      "body": "text-base leading-relaxed text-secondary",
+      "small": "text-sm text-secondary",
+      "overline": "text-xs font-bold uppercase tracking-[0.2em] text-tertiary"
+    },
+    "rules": [
+      "Headings must use tight letter spacing (tracking-tight or tracking-tighter).",
+      "Never center-align data tables or form inputs; left-align for optimal scannability.",
+      "Use IBM Plex Sans for all data metrics to ensure tabular numbers align perfectly."
+    ]
+  },
+
+  "layout": {
+    "spacing": {
+      "base": "p-4",
+      "generous": "p-8",
+      "massive": "p-12 md:p-16",
+      "gap_tight": "gap-4",
+      "gap_wide": "gap-8"
+    },
+    "grid": {
+      "strategy": "The 'Control Room' Grid",
+      "base_classes": "grid grid-cols-1 md:grid-cols-4 lg:grid-cols-12 gap-4 lg:gap-6",
+      "spans": {
+        "sidebar": "col-span-1 md:col-span-3",
+        "main_content": "col-span-1 md:col-span-9",
+        "metric_card": "col-span-1 md:col-span-3",
+        "chart_wide": "col-span-1 md:col-span-6 lg:col-span-8",
+        "list_narrow": "col-span-1 md:col-span-4"
+      }
+    },
+    "surfaces": {
+      "cards": "bg-white border border-border/40 rounded-none shadow-sm",
+      "ai_panel": "bg-ai_surface border border-brand rounded-none relative overflow-hidden",
+      "header": "bg-white/80 backdrop-blur-xl border-b border-border/40 z-50 sticky top-0"
+    }
+  },
+
+  "components": {
+    "buttons": {
+      "primary": "bg-[#002FA7] hover:bg-[#00227A] text-white rounded-none px-6 py-2.5 font-medium transition-colors",
+      "outline": "bg-transparent border-2 border-primary text-primary hover:bg-muted rounded-none px-6 py-2.5 font-medium transition-colors",
+      "danger": "bg-[#FF3333] hover:bg-[#CC2929] text-white rounded-none px-6 py-2.5 font-medium transition-colors"
+    },
+    "inputs": {
+      "search_bar": "w-full bg-white border-2 border-border focus:border-brand focus:ring-0 rounded-none text-lg px-4 py-3 h-14 font-medium placeholder:text-tertiary transition-colors",
+      "standard": "bg-white border border-border focus:border-brand rounded-none px-3 py-2 text-sm transition-colors",
+      "dropdown": "bg-white border border-border rounded-none shadow-md"
+    },
+    "badges": {
+      "ai_score": "bg-brand text-white text-xs font-bold px-2.5 py-1 rounded-none uppercase tracking-wide",
+      "lien_warning": "bg-danger text-white text-xs font-bold px-2.5 py-1 rounded-none uppercase tracking-wide",
+      "tax_alert": "bg-warning text-warning_text text-xs font-bold px-2.5 py-1 rounded-none uppercase tracking-wide"
+    },
+    "tables": {
+      "container": "w-full border-collapse border border-border",
+      "header": "bg-muted text-left text-xs font-bold uppercase tracking-wider text-secondary border-b-2 border-border/80 p-4",
+      "row": "border-b border-border hover:bg-muted/50 transition-colors",
+      "cell": "p-4 text-sm font-body text-primary align-middle"
+    },
+    "icons": {
+      "library": "@phosphor-icons/react",
+      "style": "weight='regular' for UI, weight='fill' for active states or AI features"
+    }
+  },
+
+  "motion": {
+    "hover": "transition-all duration-200 ease-in-out",
+    "active": "active:scale-[0.98]",
+    "list_stagger": "framer-motion with staggerChildren: 0.05",
+    "ai_processing": "Animate a subtle tracing beam or skeleton loading with a primary brand color wash, NOT a generic spinner."
+  },
+
+  "media": {
+    "image_urls": [
+      {
+        "url": "https://images.unsplash.com/photo-1720442617104-500fea25be51?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjA1ODh8MHwxfHNlYXJjaHw0fHxtb2Rlcm4lMjByZWFsJTIwZXN0YXRlJTIwYXJjaGl0ZWN0dXJlJTIwbWluaW1hbHxlbnwwfHx8fDE3Nzg0NDQ2NDN8MA&ixlib=rb-4.1.0&q=85",
+        "category": "auth_background",
+        "description": "Modern, minimal real estate architecture to serve as a high-contrast backdrop for the login/auth screen."
+      },
+      {
+        "url": "https://images.unsplash.com/photo-1660792734675-63a875d406b3?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjAzMzV8MHwxfHNlYXJjaHwyfHxjb21wYW55JTIwbG9nbyUyMG1pbmltYWxpc3QlMjBibGFjayUyMHdoaXRlfGVufDB8fHx8MTc3ODQ0NDY2M3ww&ixlib=rb-4.1.0&q=85",
+        "category": "brand_logo",
+        "description": "Minimalist black and white logo placeholder for the dashboard header."
+      },
+      {
+        "url": "https://images.unsplash.com/photo-1744968777188-3e1b2ef23339?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NTYxODl8MHwxfHNlYXJjaHwxfHx0ZXhhcyUyMG1hcCUyMGFic3RyYWN0fGVufDB8fHx8MTc3ODQ0NDY2M3ww&ixlib=rb-4.1.0&q=85",
+        "category": "empty_state_illustration",
+        "description": "Abstract aerial view for dashboard empty states or 'No properties found' messages."
+      }
+    ]
+  },
+
+  "accessibility": {
+    "contrast": "Strict adherence to APCA contrast standards. Do not use #808080 for text. Always use defined text.secondary or darker.",
+    "testing": "All interactive elements (buttons, filters, table rows) MUST have data-testid attributes (e.g., data-testid='filter-county-select').",
+    "focus": "All focus states must use a 2px offset ring with the brand color (#002FA7)."
+  },
+
+  "instructions_to_main_agent": [
+    "Use Shadcn UI components but heavily override their default border radii to `rounded-none` to match the Swiss Brutalist aesthetic.",
+    "Do NOT use 'Inter' for headings. Use Clash Display or Cabinet Grotesk for high-impact typography.",
+    "Data tables must be dense, clear, and feature hard borders. Avoid soft drop shadows entirely.",
+    "The AI Investment Score Badge should visually pop using the brand color or danger/warning colors based on the data. Avoid generic gray badges.",
+    "Implement the Natural Language Search as the hero element of the dashboard view, using the `inputs.search_bar` styling.",
+    "Use the `@phosphor-icons/react` package for all iconography.",
+    "Ensure all mock data (if used before scraper is ready) looks realistic for Texas (e.g., Harris County, Travis County) to match the visual weight."
+  ]
+}
