@@ -43,7 +43,8 @@ class TokenResponse(BaseModel):
 
 # ------------------ Property ------------------
 PropertyType = Literal["residential", "commercial", "land", "manufactured_home", "mixed_use", "unknown"]
-DataSource = Literal["McLennan County", "Hill County", "Bosque County"]
+# Free-form county name (any Texas county); pre-supported list is in seed_data.AVAILABLE_COUNTIES
+DataSource = str
 
 
 class Property(BaseModel):
