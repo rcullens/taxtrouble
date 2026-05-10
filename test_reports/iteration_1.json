@@ -1,0 +1,41 @@
+{
+  "summary": "Comprehensive backend testing of Texas Back Taxes & HOA Liens scraper API. All 22 tests passed including AI/Claude integration, JWT auth flow, idempotent scraping, and CSV export. Backend health check, counties listing (3 pre-supported + 36 available), dashboard stats (36 properties = Hill 12 + Bosque 9 + McLennan 15), search filters, AI insights caching, NL parse, saved searches CRUD, and re-scrape idempotency all verified.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "/api/auth/me", "issue": "Returns 403 (FastAPI HTTPBearer default) when token is missing instead of 401. Cosmetic only; accepted by tests."},
+      {"endpoint": "/api/stats/dashboard", "issue": "new_this_week is hard-coded to total count on first run (developer's TODO/comment confirms). Should be derived from scraped_at >= now()-7d once data ages."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/backend_test.py",
+    "/app/test_reports/pytest/pytest_results.xml"
+  ],
+  "action_items": [
+    "Consider returning 401 (not 403) when Authorization header is missing on /auth/me for spec compliance.",
+    "Compute new_this_week from scraped_at >= now-7days once seed timestamps are older than 7 days."
+  ],
+  "critical_code_review_comments": [
+    "server.py @app.on_event('startup'/'shutdown') is deprecated in FastAPI - migrate to lifespan context manager.",
+    "models.py defines DataSource as a Literal of only 3 counties but on-demand scrape will reject any other county that arrives in Property model validation (potential bug when scraping the 36 additional counties).",
+    "/api/scrape iterates counties sequentially in the request - long-running counties could hit ingress timeouts. Consider background task with the existing ScrapeJob model.",
+    "/api/properties/export limit hard-coded to 5000 rows - should be paginated or chunked for very large counties.",
+    "_serialize_property mutates the input doc in place; minor footgun if caller reuses doc.",
+    "register endpoint uses `__import__('uuid').uuid4().hex` instead of importing uuid at module-level (already imported in models.py)."
+  ],
+  "updated_files": [
+    "/app/backend/tests/__init__.py",
+    "/app/backend/tests/backend_test.py"
+  ],
+  "success_rate": {"backend": "100% (22/22)", "frontend": "N/A - not requested"},
+  "test_credentials": "Tests dynamically register tester+<uuid>@lien.tx / test1234 each session to avoid collisions.",
+  "seed_data_creation": "App auto-seeds on startup; tests rely on the existing 36-property seed (Hill=12, Bosque=9, McLennan=15). Tests create transient TEST_ saved searches and dynamic test users (cleanup not implemented for users - low risk).",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Backend is healthy and fully passing 22 pytest cases. AI endpoints (Claude Sonnet 4.5 via emergentintegrations) work and return well-formed JSON with caching. Idempotent scrape verified - Hill scraped twice still has 12 rows. If retesting, simply re-run `pytest /app/backend/tests/backend_test.py -v`. For frontend testing, the public URL is REACT_APP_BACKEND_URL from /app/frontend/.env."
+}
