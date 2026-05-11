@@ -162,6 +162,23 @@ export default function FilterPanel({ value, onChange, allCounties, onSave }) {
           </label>
         </div>
 
+        <div>
+          <label className="overline block mb-2">Live Balance Owed</label>
+          <input
+            type="number"
+            placeholder="Min $ owed (any)"
+            value={local.min_current_balance ?? ""}
+            onChange={(e) =>
+              update({ min_current_balance: e.target.value ? Number(e.target.value) : undefined })
+            }
+            className="swiss-input font-mono"
+            data-testid="filter-min-current-balance"
+          />
+          <p className="text-[10px] text-ink-tertiary mt-1.5 leading-snug">
+            Includes current-year balances from county tax office. Run "Sweep ANY Owed Taxes" first.
+          </p>
+        </div>
+
         {onSave && (
           <button
             onClick={onSave}

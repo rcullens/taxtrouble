@@ -72,7 +72,17 @@ class Property(BaseModel):
     has_back_taxes: bool = True
     has_hoa_lien: bool = False
     hoa_lien_amount: Optional[float] = None
-    tax_status: Literal["delinquent", "in_foreclosure", "scheduled_for_sale", "struck_off", "paid"] = "delinquent"
+    tax_status: Literal["delinquent", "in_foreclosure", "scheduled_for_sale", "struck_off", "paid", "current_due"] = "delinquent"
+
+    # Live balance from county tax office (separate from tax-sale judgment)
+    current_balance: Optional[float] = None
+    current_year_levy: Optional[float] = None
+    current_year_due: Optional[float] = None
+    prior_year_due: Optional[float] = None
+    tax_office_property_url: Optional[str] = None
+    tax_office_search_url: Optional[str] = None
+    tax_office_account_number: Optional[str] = None
+    balance_checked_at: Optional[datetime] = None
 
     # Sale info
     sale_date: Optional[str] = None
@@ -120,6 +130,9 @@ class PropertySearchFilters(BaseModel):
     tax_status: Optional[str] = None
     min_acres: Optional[float] = None
     query: Optional[str] = None  # free-text
+    # New: include current-year-due properties (not just back-tax/lien)
+    include_any_owed: Optional[bool] = None  # True = include current_due status
+    min_current_balance: Optional[float] = None
 
 
 class PropertySearchResponse(BaseModel):

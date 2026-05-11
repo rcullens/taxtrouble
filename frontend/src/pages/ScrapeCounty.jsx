@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import api from "../lib/api";
 import Header from "../components/Header";
-import { CheckCircle, Spinner, Warning, ArrowRight, MapPin, ArrowsClockwise, House } from "@phosphor-icons/react";
+import { CheckCircle, Spinner, Warning, ArrowRight, MapPin, ArrowsClockwise, House, CurrencyDollar } from "@phosphor-icons/react";
 import { toast } from "sonner";
 import { useNavigate } from "react-router-dom";
 
@@ -11,8 +11,10 @@ export default function ScrapeCounty() {
   const [selected, setSelected] = useState([]);
   const [busy, setBusy] = useState(false);
   const [cadBusy, setCadBusy] = useState(false);
+  const [balanceBusy, setBalanceBusy] = useState(false);
   const [lastResults, setLastResults] = useState(null);
   const [cadResult, setCadResult] = useState(null);
+  const [balanceResult, setBalanceResult] = useState(null);
   const [jobs, setJobs] = useState([]);
 
   useEffect(() => {
@@ -22,6 +24,38 @@ export default function ScrapeCounty() {
 
   const toggle = (c) =>
     setSelected((cur) => (cur.includes(c) ? cur.filter((x) => x !== c) : [...cur, c]));
+
+  const runBalanceSweep = async () => {
+    if (selected.length === 0) {
+      toast.error("Pick at least one county");
+      return;
+    }
+    setBalanceBusy(true);
+    setBalanceResult(null);
+    try {
+      const { data } = await api.post("/tax-office/bulk-balance-check", { counties: selected });
+      const jobId = data.job_id;
+      toast.success("Balance sweep queued — polling for progress…");
+      const poll = setInterval(async () => {
+        try {
+          const r = await api.get(`/tax-office/jobs/${jobId}`);
+          setBalanceResult(r.data);
+          if (r.data.status === "completed" || r.data.status === "failed") {
+            clearInterval(poll);
+            setBalanceBusy(false);
+            const p = r.data.progress || {};
+            toast.success(`Sweep done — ${p.with_balance || 0} properties have owed balances`);
+          }
+        } catch {
+          clearInterval(poll);
+          setBalanceBusy(false);
+        }
+      }, 3000);
+    } catch (err) {
+      toast.error("Balance sweep failed to queue");
+      setBalanceBusy(false);
+    }
+  };
 
   const run = async () => {
     if (selected.length === 0) {
@@ -272,6 +306,40 @@ export default function ScrapeCounty() {
                 )}
               </button>
               {cadBusy && <div className="ai-loader mt-3" />}
+
+              <button
+                onClick={runBalanceSweep}
+                disabled={balanceBusy || selected.length === 0}
+                className="btn-outline w-full flex items-center justify-center gap-2 mt-3"
+                data-testid="run-balance-sweep-btn"
+              >
+                {balanceBusy ? (
+                  <>
+                    <Spinner size={16} className="animate-spin" /> Checking balances...
+                  </>
+                ) : (
+                  <>
+                    <CurrencyDollar size={16} weight="bold" /> Sweep ANY Owed Taxes
+                  </>
+                )}
+              </button>
+              {balanceBusy && <div className="ai-loader mt-3" />}
+              <p className="text-[10px] text-ink-tertiary mt-2 leading-snug">
+                Hits the live county tax office for every indexed property — finds current-year balances too, not just back taxes.
+              </p>
+
+              {balanceResult && (
+                <div className="mt-4 p-3 swiss-card text-xs space-y-1">
+                  <div className="overline">Balance Sweep</div>
+                  <div className="font-mono">Status: {balanceResult.status}</div>
+                  <div className="font-mono">
+                    {balanceResult.progress?.with_balance || 0} with balance · {balanceResult.progress?.processed || 0}/{balanceResult.progress?.total || 0} processed
+                  </div>
+                  {balanceResult.progress?.failed > 0 && (
+                    <div className="text-danger">{balanceResult.progress.failed} failed</div>
+                  )}
+                </div>
+              )}
 
               {cadResult && (
                 <div className="mt-4 p-3 swiss-card text-xs space-y-1">

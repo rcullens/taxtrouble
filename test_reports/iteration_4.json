@@ -1,0 +1,46 @@
+{
+  "summary": "Iteration 4 backend testing complete - 60/60 tests passed (45 prior regression + 15 new Live Tax Office). All new endpoints verified: GET /api/tax-office/sources returns 7 ACT Tax counties with slug + actweb URL; POST /api/properties/{id}/balance-check on McLennan live-scrapes actweb.acttax.com via Playwright/Chromium and returned the exact verified data (account 200235020004110, levy $2686.38, balance $0) in ~8s; same endpoint on Hill County (non-ACT vendor) returns 200 with balance_checked_at only and no tax_office_search_url; 404 path works; POST /api/tax-office/bulk-balance-check returns {job_id,status:queued,counties} in <5s and BackgroundTask runs lookup_balance_for_property over the county - progress.processed incremented in real time during the 5-min poll window; /api/tax-office/jobs and /api/tax-office/jobs/{id} expose status/progress/job_type='balance_check'; PropertySearchFilters.min_current_balance enforces $gte and tax_status='current_due' is accepted as a valid enum.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "/api/tax-office/bulk-balance-check", "issue": "Job runner iterates the Mongo cursor twice per county - once to compute total, once to process. For larger counties consider a single count_documents() call followed by one iteration, or accumulate total as we go and update progress reactively."},
+      {"endpoint": "/api/tax-office/bulk-balance-check", "issue": "Properties are scraped sequentially (~10-15s each via Playwright). 15 McLennan props take ~3-4 minutes. Consider asyncio.Semaphore(3-5) for bounded parallelism to cut total time by ~3-4x."},
+      {"endpoint": "/api/properties/{id}/balance-check", "issue": "No timeout guard on the outer Playwright call - if actweb.acttax.com hangs beyond the per-page 15s default, the endpoint could stall for ~30s+. Recommend wrapping lookup_balance() in asyncio.wait_for(..., timeout=20) and returning the search-URL-only response on TimeoutError (consistent with the 'best-effort' contract)."},
+      {"endpoint": "/api/properties/search?min_current_balance=0", "issue": "Mongo $gte:0 excludes documents where current_balance is null - intended behavior, but worth documenting since 'min_current_balance: 0' means 'has been balance-checked AND owes >= 0', not 'all properties'."}
+    ]
+  },
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "test_report_links": [
+    "/app/backend/tests/test_tax_office.py",
+    "/app/backend/tests/backend_test.py",
+    "/app/backend/tests/test_cad.py",
+    "/app/backend/tests/test_leaderboard_comps.py",
+    "/app/test_reports/pytest/pytest_tax_office_results.xml",
+    "/app/test_reports/pytest/pytest_regression.xml"
+  ],
+  "action_items": [
+    "Optional: add asyncio.wait_for() timeout wrapper around lookup_balance() in tax_office_scrapers.py so a hung actweb page can't block the request indefinitely.",
+    "Optional: parallelize the bulk balance-check inner loop with a small asyncio.Semaphore for faster bulk jobs.",
+    "Optional: replace the duplicate cursor iteration in /tax-office/bulk-balance-check with count_documents() to avoid scanning each county's properties twice.",
+    "Carry-over from iter 3: push leaderboard adjudged_value>0 AND minimum_bid>0 into the Mongo query; deprecated FastAPI on_event hooks; cad_url_for keyword extraction strips street number."
+  ],
+  "critical_code_review_comments": [
+    "tax_office_scrapers.py:67 - browser launch path is hardcoded to '/root/bin/chromium' with a bare-Exception fallback. If chromium binary moves the fallback still works but logs nothing. Add logger.warning when falling back.",
+    "tax_office_scrapers.py:74-100 - the function reuses the same `page` for multiple goto() attempts which is fine, but the inner try/except swallows ALL exceptions silently. Add logger.debug(exc_info=True) so timeouts/captcha pages are observable in prod.",
+    "tax_office_scrapers.py:159 - tax_status promotion logic: sets 'current_due' only when current_amount_due > 0 AND prior_year_amount_due == 0; otherwise sets 'delinquent'. This will overwrite an existing 'scheduled_for_sale' status. Consider preserving the more-severe status (scheduled_for_sale > delinquent > current_due > paid).",
+    "server.py:566 - progress dict in /tax-office/bulk-balance-check is updated AFTER each property scrape (good) but the initial insert sets progress to {0,0,0,0,0} - a polling client between 'queued' and the first property finishing will see total=0. Pre-compute total via count_documents() before insert.",
+    "server.py:610 - bulk job has no failure status path - if _run() itself raises (e.g. Mongo connection lost), the job stays 'running' forever. Wrap _run body in try/except and set status='failed' with error message.",
+    "server.py /properties/{id}/balance-check: doc returned to the client uses _serialize_property which strips _id and serializes datetimes, but the in-memory `doc.update(store)` happens AFTER the Mongo update - if the update fails, the response still claims success. Re-fetch from db post-update OR handle update errors explicitly.",
+    "models.py:130-135 - PropertySearchFilters has include_any_owed but it isn't referenced in _build_query in server.py:159 - dead field, either implement (e.g. {'$or':[{'tax_status':'current_due'},{'current_balance':{'$gt':0}}]}) or remove."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_tax_office.py"
+  ],
+  "success_rate": {"backend": "100% (60/60: 45 regression + 15 new)", "frontend": "N/A - frontend testing skipped per request"},
+  "test_credentials": "Dynamic users via /api/auth/register (tester+<uuid>@lien.tx / test1234). No fixed creds needed for tax-office endpoints (currently unauthenticated).",
+  "seed_data_creation": "No new seed data created. Reused existing 36-property seed (Hill=12, Bosque=9, McLennan=15). Bulk job created one row in db.balance_jobs collection (test-isolated by job_id).",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Run `pytest /app/backend/tests/ -v` for full suite (60 tests, ~3.5 min total). test_tax_office.py::TestBulkBalanceCheck::test_bulk_job_lifecycle polls up to 5 min for McLennan bulk completion - in our run it completed in ~80s. Live scrape against actweb.acttax.com is deterministic for the seeded address '118 W Bosque Blvd' (account 200235020004110). If new ACT-Tax counties are added to ACTWEB_SLUGS, update TestTaxOfficeSources.EXPECTED. Note: tax_office endpoints are currently UNAUTHENTICATED - flag if security model changes.",
+  "rca of the issue": "No bugs reproduced. Live Playwright scrape works as designed: returns 200 with at-minimum {tax_office_search_url, balance_checked_at}; on successful scrape additionally returns {tax_office_property_url, tax_office_account_number, current_balance, current_year_levy, current_year_due, prior_year_due, possibly appraised_value/land_value/improvement_value}. Non-ACT counties (Hill) gracefully return 200 with balance_checked_at only. Bulk job uses FastAPI BackgroundTasks - returns <5s, processes asynchronously, exposes incremental progress."
+}

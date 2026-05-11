@@ -48,6 +48,7 @@ from models import (
 from ai_service import generate_property_insights, parse_natural_language_query
 from scrapers import scrape_county
 from cad_scrapers import enrich_property_from_cad, CAD_SOURCES
+from tax_office_scrapers import lookup_balance_for_property, actweb_search_url, ACTWEB_SLUGS
 from seed_data import AVAILABLE_COUNTIES, COUNTY_SOURCES
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
@@ -171,6 +172,8 @@ def _build_query(filters: PropertySearchFilters) -> dict:
         q["tax_status"] = filters.tax_status
     if filters.min_acres is not None:
         q["acres"] = {"$gte": filters.min_acres}
+    if filters.min_current_balance is not None:
+        q["current_balance"] = {"$gte": filters.min_current_balance}
     if filters.min_amount is not None or filters.max_amount is not None:
         rng: dict = {}
         if filters.min_amount is not None:
@@ -517,6 +520,108 @@ async def cad_job_status(job_id: str):
 @api.get("/cad/jobs")
 async def list_cad_jobs(limit: int = 10):
     cursor = db.cad_jobs.find({}, {"_id": 0}).sort("started_at", -1).limit(limit)
+    return {"items": [d async for d in cursor]}
+
+
+# =============== Tax Office: Current Balance ===============
+@api.get("/tax-office/sources")
+async def tax_office_sources():
+    """Return county tax-office (ACT Tax) search URLs available for live balance checks."""
+    return {
+        "sources": [
+            {"county": county, "slug": slug, "search_url": actweb_search_url(county)}
+            for county, slug in ACTWEB_SLUGS.items()
+        ]
+    }
+
+
+@api.post("/properties/{property_id}/balance-check")
+async def balance_check(property_id: str):
+    """Run a live tax-office balance lookup for one property.
+
+    Hits the county tax office (e.g. actweb.acttax.com) to fetch the current
+    unpaid balance — including current-year levies that have not gone delinquent.
+    """
+    doc = await db.properties.find_one({"id": property_id}, {"_id": 0})
+    if not doc:
+        raise HTTPException(status_code=404, detail="Property not found")
+    update = await lookup_balance_for_property(doc)
+    update_clean = {k: v for k, v in update.items() if v is not None}
+    if update_clean:
+        store = dict(update_clean)
+        if isinstance(store.get("balance_checked_at"), datetime):
+            store["balance_checked_at"] = store["balance_checked_at"].isoformat()
+        await db.properties.update_one({"id": property_id}, {"$set": store})
+        doc.update(store)
+    return _serialize_property(doc)
+
+
+@api.post("/tax-office/bulk-balance-check")
+async def bulk_balance_check(payload: ScrapeRequest, background_tasks: BackgroundTasks):
+    """Queue a bulk balance check (any-owed-taxes mode) for all properties in given counties."""
+    job = ScrapeJob(counties=payload.counties, status="queued")
+    job_doc = job.model_dump()
+    job_doc["started_at"] = job_doc["started_at"].isoformat()
+    job_doc["job_type"] = "balance_check"
+    job_doc["progress"] = {"total": 0, "processed": 0, "with_balance": 0, "no_data": 0, "failed": 0}
+    await db.balance_jobs.insert_one(job_doc)
+
+    async def _run():
+        await db.balance_jobs.update_one({"id": job.id}, {"$set": {"status": "running"}})
+        total = with_balance = no_data = failed = processed = 0
+        for county in payload.counties:
+            cursor = db.properties.find({"county": county}, {"_id": 0})
+            async for _ in cursor:
+                total += 1
+            cursor = db.properties.find({"county": county}, {"_id": 0})
+            async for doc in cursor:
+                processed += 1
+                try:
+                    update = await lookup_balance_for_property(doc)
+                    update_clean = {k: v for k, v in update.items() if v is not None}
+                    has_balance = (update_clean.get("current_balance") or 0) > 0
+                    if has_balance:
+                        with_balance += 1
+                    elif "current_balance" not in update_clean:
+                        no_data += 1
+                    if update_clean:
+                        store = dict(update_clean)
+                        if isinstance(store.get("balance_checked_at"), datetime):
+                            store["balance_checked_at"] = store["balance_checked_at"].isoformat()
+                        await db.properties.update_one({"id": doc["id"]}, {"$set": store})
+                except Exception:
+                    logger.exception("balance check failed for %s", doc.get("id"))
+                    failed += 1
+                await db.balance_jobs.update_one(
+                    {"id": job.id},
+                    {"$set": {"progress": {
+                        "total": total, "processed": processed,
+                        "with_balance": with_balance, "no_data": no_data, "failed": failed,
+                    }}},
+                )
+        await db.balance_jobs.update_one(
+            {"id": job.id},
+            {"$set": {
+                "status": "completed",
+                "finished_at": datetime.now(timezone.utc).isoformat(),
+            }},
+        )
+
+    background_tasks.add_task(_run)
+    return {"job_id": job.id, "status": "queued", "counties": payload.counties}
+
+
+@api.get("/tax-office/jobs/{job_id}")
+async def tax_office_job_status(job_id: str):
+    doc = await db.balance_jobs.find_one({"id": job_id}, {"_id": 0})
+    if not doc:
+        raise HTTPException(status_code=404, detail="Job not found")
+    return doc
+
+
+@api.get("/tax-office/jobs")
+async def list_tax_office_jobs(limit: int = 10):
+    cursor = db.balance_jobs.find({}, {"_id": 0}).sort("started_at", -1).limit(limit)
     return {"items": [d async for d in cursor]}
 
 

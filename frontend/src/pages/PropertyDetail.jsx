@@ -4,7 +4,7 @@ import api from "../lib/api";
 import Header from "../components/Header";
 import { fmtUSD, fmtUSDPrecise, propertyTypeLabel, taxStatusLabel, fmtNum } from "../lib/format";
 import {
-  ArrowLeft, Sparkle, MapPin, Buildings, Warning, FileText, CheckCircle, XCircle, LinkSimple, Spinner, House, Stack,
+  ArrowLeft, Sparkle, MapPin, Buildings, Warning, FileText, CheckCircle, XCircle, LinkSimple, Spinner, House, Stack, CurrencyDollar,
 } from "@phosphor-icons/react";
 import { toast } from "sonner";
 import ComparablesPanel from "../components/ComparablesPanel";
@@ -15,6 +15,7 @@ export default function PropertyDetail() {
   const [prop, setProp] = useState(null);
   const [aiBusy, setAiBusy] = useState(false);
   const [cadBusy, setCadBusy] = useState(false);
+  const [balanceBusy, setBalanceBusy] = useState(false);
   const [error, setError] = useState(null);
 
   useEffect(() => {
@@ -51,6 +52,26 @@ export default function PropertyDetail() {
       toast.error("CAD enrichment failed: " + (err.response?.data?.detail || "try again"));
     } finally {
       setCadBusy(false);
+    }
+  };
+
+  const runBalanceCheck = async () => {
+    setBalanceBusy(true);
+    try {
+      const { data } = await api.post(`/properties/${id}/balance-check`);
+      setProp(data);
+      const bal = data.current_balance;
+      if (bal != null && bal > 0) {
+        toast.success(`Current balance: $${bal.toFixed(2)}`);
+      } else if (bal === 0) {
+        toast.success("No balance owed — fully paid.");
+      } else {
+        toast.success("Tax-office check complete (no data returned)");
+      }
+    } catch (err) {
+      toast.error("Balance check failed: " + (err.response?.data?.detail || "try again"));
+    } finally {
+      setBalanceBusy(false);
     }
   };
 
@@ -310,6 +331,90 @@ export default function PropertyDetail() {
                         data-testid="cad-search-link"
                       >
                         <LinkSimple size={12} /> Search on {prop.county.replace(" County", "")} CAD
+                      </a>
+                    )}
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Tax Office Live Balance */}
+            <div className="swiss-card-strong overflow-hidden">
+              <div className="bg-[#FFD600] px-7 py-4 flex items-center justify-between">
+                <div className="flex items-center gap-2.5">
+                  <CurrencyDollar size={20} weight="fill" color="#7A6600" />
+                  <div>
+                    <div className="overline" style={{ color: "#7A6600" }}>Live Tax-Office Balance</div>
+                    <div className="text-sm font-semibold mt-0.5 text-[#7A6600]">
+                      {prop.county} Tax Office (ACT Tax)
+                    </div>
+                  </div>
+                </div>
+                <button
+                  onClick={runBalanceCheck}
+                  disabled={balanceBusy}
+                  className="btn-primary inline-flex items-center gap-2 text-sm"
+                  data-testid="balance-check-btn"
+                >
+                  {balanceBusy ? <Spinner size={14} className="animate-spin" /> : <CurrencyDollar size={14} weight="fill" />}
+                  {balanceBusy ? "Checking..." : "Check Balance"}
+                </button>
+              </div>
+              <div className="p-7">
+                {balanceBusy && (
+                  <>
+                    <div className="ai-loader mb-3" />
+                    <p className="text-sm text-ink-secondary">
+                      Hitting {prop.county.replace(" County", "")} Tax Office for current-year + prior-year balance. 10-20 seconds.
+                    </p>
+                  </>
+                )}
+                {!balanceBusy && prop.current_balance == null && (
+                  <p className="text-sm text-ink-secondary">
+                    Click <span className="font-medium">Check Balance</span> to fetch the live unpaid balance from the county tax office — includes current-year taxes that haven't gone delinquent yet.
+                  </p>
+                )}
+                {prop.current_balance != null && (
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-px bg-default border border-default">
+                    {[
+                      { label: "Total Balance Due", val: fmtUSDPrecise(prop.current_balance), highlight: prop.current_balance > 0 },
+                      { label: "Current Year Levy", val: fmtUSDPrecise(prop.current_year_levy) },
+                      { label: "Current Yr Due", val: fmtUSDPrecise(prop.current_year_due) },
+                      { label: "Prior Year Due", val: fmtUSDPrecise(prop.prior_year_due) },
+                    ].map((m) => (
+                      <div key={m.label} className="bg-white p-4">
+                        <div className="overline mb-1.5">{m.label}</div>
+                        <div className={"font-mono text-base font-semibold " + (m.highlight ? "text-danger" : "text-ink")}>{m.val}</div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                {prop.balance_checked_at && (
+                  <div className="text-xs text-ink-tertiary mt-3 font-mono">
+                    Last checked: {new Date(prop.balance_checked_at).toLocaleString()}
+                  </div>
+                )}
+                {(prop.tax_office_property_url || prop.tax_office_search_url) && (
+                  <div className="mt-5 pt-5 border-t border-default flex flex-col sm:flex-row gap-3 text-sm">
+                    {prop.tax_office_property_url && (
+                      <a
+                        href={prop.tax_office_property_url}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="btn-outline inline-flex items-center gap-1.5 text-xs"
+                        data-testid="tax-office-property-link"
+                      >
+                        <LinkSimple size={12} /> Pay / view at Tax Office
+                      </a>
+                    )}
+                    {prop.tax_office_search_url && !prop.tax_office_property_url && (
+                      <a
+                        href={prop.tax_office_search_url}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="btn-outline inline-flex items-center gap-1.5 text-xs"
+                      >
+                        <LinkSimple size={12} /> Search at {prop.county.replace(" County", "")} Tax Office
                       </a>
                     )}
                   </div>
