@@ -10,6 +10,7 @@ import Dashboard from "./pages/Dashboard";
 import PropertyDetail from "./pages/PropertyDetail";
 import ScrapeCounty from "./pages/ScrapeCounty";
 import SavedSearches from "./pages/SavedSearches";
+import Leaderboard from "./pages/Leaderboard";
 
 function App() {
   return (
@@ -21,6 +22,7 @@ function App() {
             <Route path="/login" element={<Login />} />
             <Route path="/register" element={<Register />} />
             <Route path="/dashboard" element={<Dashboard />} />
+            <Route path="/leaderboard" element={<Leaderboard />} />
             <Route path="/property/:id" element={<PropertyDetail />} />
             <Route path="/scrape" element={<ScrapeCounty />} />
             <Route path="/saved" element={<SavedSearches />} />

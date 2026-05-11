@@ -7,6 +7,7 @@ import {
   ArrowLeft, Sparkle, MapPin, Buildings, Warning, FileText, CheckCircle, XCircle, LinkSimple, Spinner, House, Stack,
 } from "@phosphor-icons/react";
 import { toast } from "sonner";
+import ComparablesPanel from "../components/ComparablesPanel";
 
 export default function PropertyDetail() {
   const { id } = useParams();
@@ -315,6 +316,9 @@ export default function PropertyDetail() {
                 )}
               </div>
             </div>
+
+            {/* Comparable Sales */}
+            <ComparablesPanel propertyId={id} />
 
             {/* Legal */}
             <div className="swiss-card p-7">

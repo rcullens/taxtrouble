@@ -1,0 +1,45 @@
+{
+  "summary": "Iteration 3 backend testing complete - 45/45 tests passed (22 regression + 10 CAD + 13 new). Verified Deal Leaderboard (default/limit/period=week/sort), Comparable Sales panel (shape, fields, Bosque mixed_use fallback, 404), CAD discover endpoint (always returns esearch_search_url + source_label; arcgis null for Harris is acceptable), backgrounded /api/cad/bulk-enrich (returns job_id queued in <1s, /cad/jobs/{id} polls to completed with progress 9/9/9/0 for Bosque), /api/cad/jobs listing, and full regression of previous endpoints (auth, search, scrape, /cad/sources, ai-insights, single cad-enrich).",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "/api/cad/bulk-enrich", "issue": "Iterates Mongo cursor twice to count then process - acceptable for small counties; consider a single $count or accumulate during the loop."},
+      {"endpoint": "/api/cad/jobs/{id}", "issue": "404 returns FastAPI default {'detail':'Job not found'} - consistent with rest of API; no fix needed."},
+      {"endpoint": "/api/leaderboard", "issue": "Filters in-memory after fetching 500 properties; fine at current scale but should push adjudged_value>0 & minimum_bid>0 into the Mongo query for larger datasets."},
+      {"endpoint": "/api/properties/{id}/comparables", "issue": "Sort by tax_owed proximity ignores property_type/sqft mismatch after fallback. Consider returning a `match_quality` field per comp."}
+    ]
+  },
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "test_report_links": [
+    "/app/backend/tests/test_leaderboard_comps.py",
+    "/app/backend/tests/test_cad.py",
+    "/app/backend/tests/backend_test.py",
+    "/app/test_reports/pytest/pytest_leaderboard_results.xml",
+    "/app/test_reports/pytest/pytest_cad_results.xml",
+    "/app/test_reports/pytest/pytest_results.xml"
+  ],
+  "action_items": [
+    "Optional: push leaderboard eligibility filter ($gt 0 on minimum_bid AND adjudged_value) into MongoDB query rather than Python loop for scalability.",
+    "Optional: add `match_quality` score to comparables to surface fallback (county-only vs zip-matched).",
+    "Carry-over from iteration 2: deprecated FastAPI on_event hooks, derive new_this_week from scraped_at, cad_url_for keyword extraction strips street number (may yield ambiguous matches in big cities like Harris)."
+  ],
+  "critical_code_review_comments": [
+    "server.py line 625: `__import__('datetime').timedelta(days=7)` is a code smell - `timedelta` is already imported transitively but should be added to the top-level `from datetime import ...` import.",
+    "server.py /cad/bulk-enrich background task: catches blanket Exception per property without logging the error - failures are silent. Add `logger.exception()` so failed enrichments are traceable.",
+    "server.py /leaderboard: `scraped_at` filter compares isoformat strings - works only because ISO-8601 sorts lexicographically. Document this or normalize to datetime in storage.",
+    "server.py /comparables: scope='zip' is reported even when zip-scoped query returned 0 results and county fallback supplied all comps (line 608 only checks `len(pool) >= 1` which is the final pool, not the zip-scoped pool). Misleading metadata.",
+    "cad_scrapers.discover_arcgis_endpoint: 4 sequential HTTP probes with 8s timeout each = up to 32s worst case per /cad/discover request. Consider asyncio.gather for parallel probes.",
+    "Property model lacks index hint comments - county/parcel_id queries (used by scrape idempotency upsert) should have a compound index for performance."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_cad.py",
+    "/app/backend/tests/test_leaderboard_comps.py"
+  ],
+  "success_rate": {"backend": "100% (45/45)", "frontend": "N/A - frontend testing skipped per request"},
+  "test_credentials": "Dynamic users via /api/auth/register (tester+<uuid>@lien.tx / test1234). No fixed creds needed.",
+  "seed_data_creation": "Relies on existing 36-property seed (Hill=12, Bosque=9, McLennan=15). McLennan provides the 15 eligible leaderboard entries (adjudged_value + minimum_bid both populated). Bosque mixed_use fallback verified.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Run `pytest /app/backend/tests/ -v` for full suite (45 tests, ~75s total). test_cad.py::test_bulk_enrich_returns_job_id_immediately now polls /cad/jobs/{id} (timeout 10 min, typically completes in ~45s for Bosque). If new counties are seeded, update test_leaderboard_default's expected total_eligible (currently 15 = McLennan only). The leaderboard endpoint requires BOTH adjudged_value>0 AND minimum_bid>0 - Hill/Bosque seed data has minimum_bid but no adjudged_value, so they're excluded by design.",
+  "rca of the issue": "No bugs reproduced. The single pre-existing iteration-2 issue (sync bulk-enrich could time out) has been addressed by the new BackgroundTasks-based implementation; verified the endpoint now returns in <1s with status=queued."
+}

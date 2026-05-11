@@ -9,6 +9,7 @@ export default function Header() {
 
   const navItems = [
     { to: "/dashboard", label: "Dashboard" },
+    { to: "/leaderboard", label: "Leaderboard" },
     { to: "/scrape", label: "Scrape" },
     ...(user ? [{ to: "/saved", label: "Saved Searches" }] : []),
   ];

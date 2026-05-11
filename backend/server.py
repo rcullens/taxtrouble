@@ -520,6 +520,144 @@ async def list_cad_jobs(limit: int = 10):
     return {"items": [d async for d in cursor]}
 
 
+# =============== Comparable Sales ===============
+@api.get("/properties/{property_id}/comparables")
+async def get_comparables(property_id: str, limit: int = 5):
+    """Return comparable distressed properties from the same area.
+
+    Strategy: same county + same property_type + (same ZIP if available),
+    excluding the target. Sorted by tax_owed proximity to the target.
+    """
+    target = await db.properties.find_one({"id": property_id}, {"_id": 0})
+    if not target:
+        raise HTTPException(status_code=404, detail="Property not found")
+
+    q: dict = {
+        "id": {"$ne": property_id},
+        "county": target["county"],
+    }
+    # Try with property_type first
+    typed_q = dict(q)
+    if target.get("property_type") and target["property_type"] != "unknown":
+        typed_q["property_type"] = target["property_type"]
+    # Try ZIP-scoped first; if too few, fall back to county
+    zip_q = dict(typed_q)
+    if target.get("zip_code"):
+        zip_q["zip_code"] = target["zip_code"]
+
+    cursor = db.properties.find(zip_q, {"_id": 0}).limit(50)
+    pool = [_serialize_property(d) async for d in cursor]
+    if len(pool) < limit:
+        cursor = db.properties.find(typed_q, {"_id": 0}).limit(50)
+        pool = [_serialize_property(d) async for d in cursor]
+    if len(pool) < limit:
+        # Final fallback: same county, any type
+        cursor = db.properties.find(q, {"_id": 0}).limit(50)
+        pool = [_serialize_property(d) async for d in cursor]
+
+    target_owed = float(target.get("tax_owed") or 0)
+    pool.sort(key=lambda p: abs(float(p.get("tax_owed") or 0) - target_owed))
+    pool = pool[:limit]
+
+    # Decorate each with $/sqft and delta vs target
+    target_ppsf = None
+    if target.get("sqft") and target.get("adjudged_value"):
+        target_ppsf = float(target["adjudged_value"]) / float(target["sqft"])
+
+    comps = []
+    for p in pool:
+        ppsf = None
+        if p.get("sqft") and p.get("adjudged_value"):
+            ppsf = float(p["adjudged_value"]) / float(p["sqft"])
+        delta = None
+        if target_ppsf and ppsf:
+            delta = round(((target_ppsf - ppsf) / ppsf) * 100, 1)
+        comps.append({
+            "id": p["id"],
+            "address": p["address"],
+            "city": p["city"],
+            "zip_code": p.get("zip_code"),
+            "property_type": p["property_type"],
+            "sqft": p.get("sqft"),
+            "year_built": p.get("year_built"),
+            "tax_owed": p.get("tax_owed"),
+            "minimum_bid": p.get("minimum_bid"),
+            "adjudged_value": p.get("adjudged_value"),
+            "appraised_value": p.get("appraised_value"),
+            "price_per_sqft": round(ppsf, 2) if ppsf else None,
+            "delta_pct_vs_target": delta,
+        })
+
+    target_summary = {
+        "id": target["id"],
+        "address": target["address"],
+        "city": target["city"],
+        "sqft": target.get("sqft"),
+        "adjudged_value": target.get("adjudged_value"),
+        "price_per_sqft": round(target_ppsf, 2) if target_ppsf else None,
+    }
+    avg_ppsf = (
+        round(sum(c["price_per_sqft"] for c in comps if c["price_per_sqft"]) /
+              max(1, sum(1 for c in comps if c["price_per_sqft"])), 2)
+        if any(c["price_per_sqft"] for c in comps) else None
+    )
+    return {
+        "target": target_summary,
+        "comparables": comps,
+        "area_avg_price_per_sqft": avg_ppsf,
+        "scope": "zip" if target.get("zip_code") and len(pool) >= 1 else "county",
+    }
+
+
+# =============== Deal Leaderboard ===============
+_GRADE_PTS = {"A": 5, "B": 4, "C": 3, "D": 2, "F": 1}
+
+
+@api.get("/leaderboard")
+async def deal_leaderboard(limit: int = 10, period: str = "all"):
+    """Top-N distressed properties ranked by discount × AI grade multiplier.
+
+    Score = discount_pct * (1 + ai_score/100 if ai_score else 1).
+    `period=week` filters to properties scraped in the last 7 days.
+    """
+    q: dict = {}
+    if period == "week":
+        since = (datetime.now(timezone.utc) - __import__("datetime").timedelta(days=7)).isoformat()
+        q["scraped_at"] = {"$gte": since}
+
+    cursor = db.properties.find(q, {"_id": 0}).limit(500)
+    items = []
+    async for d in cursor:
+        adjudged = float(d.get("adjudged_value") or 0)
+        min_bid = float(d.get("minimum_bid") or 0)
+        if adjudged <= 0 or min_bid <= 0:
+            continue
+        discount_pct = max(0.0, (adjudged - min_bid) / adjudged)
+        ai_mult = 1 + (float(d.get("ai_score") or 0) / 100.0)
+        score = discount_pct * ai_mult
+        items.append({
+            "id": d["id"],
+            "address": d["address"],
+            "city": d["city"],
+            "county": d["county"],
+            "property_type": d["property_type"],
+            "minimum_bid": min_bid,
+            "adjudged_value": adjudged,
+            "discount_amount": adjudged - min_bid,
+            "discount_pct": round(discount_pct * 100, 1),
+            "ai_score": d.get("ai_score"),
+            "ai_grade": d.get("ai_grade"),
+            "deal_score": round(score * 100, 2),
+        })
+    items.sort(key=lambda x: x["deal_score"], reverse=True)
+    return {
+        "period": period,
+        "generated_at": datetime.now(timezone.utc).isoformat(),
+        "total_eligible": len(items),
+        "items": items[:limit],
+    }
+
+
 # =============== Dashboard stats ===============
 @api.get("/stats/dashboard", response_model=DashboardStats)
 async def dashboard_stats():

@@ -182,25 +182,44 @@ class TestCadEnrichSingle:
         assert body.get("cad_search_url") is not None
 
 
-# -------- POST /api/cad/bulk-enrich --------
+# -------- POST /api/cad/bulk-enrich (now backgrounded) --------
 class TestCadBulkEnrich:
-    def test_bulk_enrich_bosque_only(self, session):
-        """Use Bosque (smallest county = 9 props) to keep run time bounded."""
+    def test_bulk_enrich_returns_job_id_immediately(self, session):
+        """Bulk-enrich is now backgrounded; should return job_id within ~1s."""
+        import time as _t
+        t0 = _t.time()
         r = session.post(
             f"{API}/cad/bulk-enrich",
             json={"counties": ["Bosque County"]},
-            timeout=600,  # 9 props * up to ~20s each Playwright
+            timeout=30,
         )
+        elapsed = _t.time() - t0
         assert r.status_code == 200, r.text
         body = r.json()
+        assert "job_id" in body and isinstance(body["job_id"], str)
+        assert body.get("status") == "queued"
         assert body["counties"] == ["Bosque County"]
-        # Bosque has 9 seeded properties
-        assert body["properties_processed"] == 9
-        # enriched count should equal processed minus failed (no errors expected)
-        assert body["properties_enriched"] + body["properties_failed"] == 9
-        # All processed should set at least the URL/source/timestamp, so enriched >= processed
-        assert body["properties_enriched"] >= 1
-        assert isinstance(body["properties_failed"], int)
+        # Must return quickly (well under the synchronous Playwright loop time)
+        assert elapsed < 10, f"bulk-enrich did not return immediately (took {elapsed:.1f}s)"
+
+        # Poll the job status endpoint
+        job_id = body["job_id"]
+        deadline = _t.time() + 600
+        last_status = None
+        while _t.time() < deadline:
+            j = session.get(f"{API}/cad/jobs/{job_id}", timeout=30)
+            assert j.status_code == 200, j.text
+            jb = j.json()
+            last_status = jb.get("status")
+            if last_status == "completed":
+                # Verify progress shape
+                progress = jb.get("progress") or {}
+                assert progress.get("total") == 9
+                assert progress.get("processed") == 9
+                assert progress.get("enriched", 0) + progress.get("failed", 0) == 9
+                return
+            _t.sleep(5)
+        pytest.fail(f"CAD job did not complete within 10 min; last status={last_status}")
 
 
 # -------- Property model accepts CAD fields (regression) --------
