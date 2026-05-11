@@ -16,7 +16,7 @@ from dotenv import load_dotenv
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / ".env")
 
-from fastapi import FastAPI, APIRouter, Depends, HTTPException, Query, status
+from fastapi import FastAPI, APIRouter, Depends, HTTPException, Query, status, BackgroundTasks
 from fastapi.responses import StreamingResponse
 from starlette.middleware.cors import CORSMiddleware
 from motor.motor_asyncio import AsyncIOMotorClient
@@ -410,6 +410,19 @@ async def cad_sources():
     }
 
 
+@api.get("/cad/discover/{county}")
+async def cad_discover(county: str):
+    """Probe ArcGIS REST endpoints for any Texas county. Returns discovered services."""
+    from cad_scrapers import discover_arcgis_endpoint, cad_url_for, cad_source_name
+    arc = await discover_arcgis_endpoint(county)
+    return {
+        "county": county,
+        "esearch_search_url": cad_url_for(county, ""),
+        "source_label": cad_source_name(county),
+        "arcgis": arc,
+    }
+
+
 @api.post("/properties/{property_id}/cad-enrich")
 async def cad_enrich_property(property_id: str):
     """Run a best-effort live CAD lookup for a single property."""
@@ -429,43 +442,82 @@ async def cad_enrich_property(property_id: str):
 
 
 @api.post("/cad/bulk-enrich")
-async def cad_bulk_enrich(payload: ScrapeRequest):
-    """Run CAD enrichment for every property in the given counties (best-effort)."""
-    total = 0
-    enriched = 0
-    failed = 0
-    for county in payload.counties:
-        cursor = db.properties.find({"county": county}, {"_id": 0})
-        async for doc in cursor:
-            total += 1
-            # Always set at least the search URL + source + timestamp
-            from cad_scrapers import cad_url_for, cad_source_name
-            base_update = {
-                "cad_search_url": cad_url_for(county, doc.get("address")),
-                "cad_data_source": cad_source_name(county) or doc.get("cad_data_source"),
-                "cad_enriched_at": datetime.now(timezone.utc).isoformat(),
-            }
-            try:
-                update = await enrich_property_from_cad(doc)
-                update_clean = {k: v for k, v in update.items() if v is not None}
-                if update_clean:
-                    store = dict(update_clean)
-                    if isinstance(store.get("cad_enriched_at"), datetime):
-                        store["cad_enriched_at"] = store["cad_enriched_at"].isoformat()
-                    await db.properties.update_one({"id": doc["id"]}, {"$set": store})
-                    enriched += 1
-                else:
+async def cad_bulk_enrich(payload: ScrapeRequest, background_tasks: BackgroundTasks):
+    """Queue a CAD enrichment job in the background for the given counties.
+
+    Returns a job_id immediately. Poll /api/cad/jobs/{job_id} for progress.
+    """
+    from cad_scrapers import cad_url_for, cad_source_name
+
+    job = ScrapeJob(counties=payload.counties, status="queued")
+    job_doc = job.model_dump()
+    job_doc["started_at"] = job_doc["started_at"].isoformat()
+    job_doc["job_type"] = "cad_enrich"
+    job_doc["progress"] = {"total": 0, "processed": 0, "enriched": 0, "failed": 0}
+    await db.cad_jobs.insert_one(job_doc)
+
+    async def _run():
+        await db.cad_jobs.update_one({"id": job.id}, {"$set": {"status": "running"}})
+        total = enriched = failed = processed = 0
+        for county in payload.counties:
+            cursor = db.properties.find({"county": county}, {"_id": 0})
+            async for doc in cursor:
+                total += 1
+            cursor = db.properties.find({"county": county}, {"_id": 0})
+            async for doc in cursor:
+                processed += 1
+                base_update = {
+                    "cad_search_url": cad_url_for(county, doc.get("address")),
+                    "cad_data_source": cad_source_name(county) or doc.get("cad_data_source"),
+                    "cad_enriched_at": datetime.now(timezone.utc).isoformat(),
+                }
+                try:
+                    update = await enrich_property_from_cad(doc)
+                    update_clean = {k: v for k, v in update.items() if v is not None}
+                    if update_clean:
+                        store = dict(update_clean)
+                        if isinstance(store.get("cad_enriched_at"), datetime):
+                            store["cad_enriched_at"] = store["cad_enriched_at"].isoformat()
+                        await db.properties.update_one({"id": doc["id"]}, {"$set": store})
+                        enriched += 1
+                    else:
+                        await db.properties.update_one({"id": doc["id"]}, {"$set": base_update})
+                except Exception:
+                    failed += 1
                     await db.properties.update_one({"id": doc["id"]}, {"$set": base_update})
-            except Exception:
-                failed += 1
-                # Still save the base verification info
-                await db.properties.update_one({"id": doc["id"]}, {"$set": base_update})
-    return {
-        "counties": payload.counties,
-        "properties_processed": total,
-        "properties_enriched": enriched,
-        "properties_failed": failed,
-    }
+                # Live progress
+                await db.cad_jobs.update_one(
+                    {"id": job.id},
+                    {"$set": {"progress": {
+                        "total": total, "processed": processed,
+                        "enriched": enriched, "failed": failed,
+                    }}},
+                )
+        await db.cad_jobs.update_one(
+            {"id": job.id},
+            {"$set": {
+                "status": "completed",
+                "finished_at": datetime.now(timezone.utc).isoformat(),
+                "progress": {"total": total, "processed": processed, "enriched": enriched, "failed": failed},
+            }},
+        )
+
+    background_tasks.add_task(_run)
+    return {"job_id": job.id, "status": "queued", "counties": payload.counties}
+
+
+@api.get("/cad/jobs/{job_id}")
+async def cad_job_status(job_id: str):
+    doc = await db.cad_jobs.find_one({"id": job_id}, {"_id": 0})
+    if not doc:
+        raise HTTPException(status_code=404, detail="Job not found")
+    return doc
+
+
+@api.get("/cad/jobs")
+async def list_cad_jobs(limit: int = 10):
+    cursor = db.cad_jobs.find({}, {"_id": 0}).sort("started_at", -1).limit(limit)
+    return {"items": [d async for d in cursor]}
 
 
 # =============== Dashboard stats ===============

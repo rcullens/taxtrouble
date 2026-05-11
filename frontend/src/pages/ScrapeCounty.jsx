@@ -52,13 +52,26 @@ export default function ScrapeCounty() {
     setCadResult(null);
     try {
       const { data } = await api.post("/cad/bulk-enrich", { counties: selected });
-      setCadResult(data);
-      toast.success(
-        `CAD enrich — ${data.properties_enriched}/${data.properties_processed} properties enriched`
-      );
+      const jobId = data.job_id;
+      toast.success("CAD enrich queued — polling for progress…");
+      // Poll job status
+      const poll = setInterval(async () => {
+        try {
+          const r = await api.get(`/cad/jobs/${jobId}`);
+          setCadResult(r.data);
+          if (r.data.status === "completed" || r.data.status === "failed") {
+            clearInterval(poll);
+            setCadBusy(false);
+            const p = r.data.progress || {};
+            toast.success(`CAD enrich done — ${p.enriched || 0}/${p.total || 0} enriched`);
+          }
+        } catch {
+          clearInterval(poll);
+          setCadBusy(false);
+        }
+      }, 2500);
     } catch (err) {
-      toast.error("CAD bulk-enrich failed");
-    } finally {
+      toast.error("CAD bulk-enrich failed to queue");
       setCadBusy(false);
     }
   };
@@ -264,10 +277,13 @@ export default function ScrapeCounty() {
                 <div className="mt-4 p-3 swiss-card text-xs space-y-1">
                   <div className="overline">Last CAD Enrich</div>
                   <div className="font-mono">
-                    {cadResult.properties_enriched}/{cadResult.properties_processed} enriched
+                    Status: {cadResult.status}
                   </div>
-                  {cadResult.properties_failed > 0 && (
-                    <div className="text-danger">{cadResult.properties_failed} failed</div>
+                  <div className="font-mono">
+                    {cadResult.progress?.enriched || 0}/{cadResult.progress?.total || 0} enriched · {cadResult.progress?.processed || 0} processed
+                  </div>
+                  {cadResult.progress?.failed > 0 && (
+                    <div className="text-danger">{cadResult.progress.failed} failed</div>
                   )}
                 </div>
               )}

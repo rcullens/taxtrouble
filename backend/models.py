@@ -95,6 +95,7 @@ class Property(BaseModel):
     cad_search_url: Optional[str] = None
     cad_data_source: Optional[str] = None  # eg "Hill CAD eSearch", "PDF Notice"
     cad_enriched_at: Optional[datetime] = None
+    arcgis_endpoint: Optional[str] = None  # discovered ArcGIS REST root
 
     # AI fields
     ai_score: Optional[int] = None  # 0-100 investment score

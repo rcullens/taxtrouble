@@ -23,7 +23,7 @@ from seed_data import (
     COUNTY_SOURCES,
 )
 from cad_overlay import CAD_OVERLAY
-from cad_scrapers import cad_url_for
+from cad_scrapers import cad_url_for, cad_source_name
 
 logger = logging.getLogger(__name__)
 
@@ -52,6 +52,7 @@ def _normalize(record: dict, county: str) -> dict:
         "sale_location": meta.get("sale_location"),
         "sale_date": meta.get("sale_date"),
         "cad_search_url": cad_url_for(county, record.get("address")),
+        "cad_data_source": cad_extra.get("cad_data_source") or cad_source_name(county),
         "last_updated": datetime.now(timezone.utc),
         "scraped_at": datetime.now(timezone.utc),
         **cad_extra,
