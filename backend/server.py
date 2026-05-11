@@ -7,7 +7,7 @@ import logging
 import os
 import re
 import time
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from pathlib import Path
 from typing import Optional
 
@@ -547,6 +547,7 @@ async def get_comparables(property_id: str, limit: int = 5):
 
     cursor = db.properties.find(zip_q, {"_id": 0}).limit(50)
     pool = [_serialize_property(d) async for d in cursor]
+    zip_hit = len(pool) >= limit and target.get("zip_code") is not None
     if len(pool) < limit:
         cursor = db.properties.find(typed_q, {"_id": 0}).limit(50)
         pool = [_serialize_property(d) async for d in cursor]
@@ -605,7 +606,7 @@ async def get_comparables(property_id: str, limit: int = 5):
         "target": target_summary,
         "comparables": comps,
         "area_avg_price_per_sqft": avg_ppsf,
-        "scope": "zip" if target.get("zip_code") and len(pool) >= 1 else "county",
+        "scope": "zip" if zip_hit else "county",
     }
 
 
@@ -622,7 +623,7 @@ async def deal_leaderboard(limit: int = 10, period: str = "all"):
     """
     q: dict = {}
     if period == "week":
-        since = (datetime.now(timezone.utc) - __import__("datetime").timedelta(days=7)).isoformat()
+        since = (datetime.now(timezone.utc) - timedelta(days=7)).isoformat()
         q["scraped_at"] = {"$gte": since}
 
     cursor = db.properties.find(q, {"_id": 0}).limit(500)

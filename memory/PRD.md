@@ -51,3 +51,18 @@ Develop an AI-driven app that scrapes public records for properties with back ta
 
 ## Test Credentials
 See `/app/memory/test_credentials.md`
+
+## Update 2026-02-11
+### CAD scraping shipped
+- 3 new endpoints: `/api/cad/sources`, `/api/properties/{id}/cad-enrich`, `/api/cad/bulk-enrich` (now backgrounded with job_id polling), `/api/cad/jobs`, `/api/cad/jobs/{id}`, `/api/cad/discover/{county}`
+- Real deed references pre-populated for all 12 Hill County properties (V917/P8, V1715/P495, etc.)
+- McLennan/Bosque properties have year_built, sqft, appraised_value, land_value, improvement_value, exemptions
+- `cad_url_for` works for ANY Texas county via heuristic `esearch.{slug}cad.org` fallback
+- ArcGIS REST endpoint discovery probes 4 hosting patterns per county
+- `enrich_property_from_cad` tries ArcGIS REST first, falls back to Playwright on BIS eSearch
+
+### Comparable Sales + Deal Leaderboard shipped
+- `GET /api/properties/{id}/comparables` - returns target + 5 comps with $/sqft & delta; falls back zip → typed → county
+- `GET /api/leaderboard?limit=10&period=all|week` - top deals ranked by `discount_pct × (1 + ai_score/100)`
+- New `/leaderboard` page in nav; Comparables panel on property detail
+- Tests: 45/45 passing (22 base + 10 CAD + 13 leaderboard/comparables)
