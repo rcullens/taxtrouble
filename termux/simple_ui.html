@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>TaxTrouble Termux</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body { background: #0f172a; color: white; }
+        .card { background: #1e2937; }
+    </style>
+</head>
+<body class="p-4">
+    <div class="max-w-2xl mx-auto">
+        <h1 class="text-4xl font-bold mb-2">🏠 TaxTrouble</h1>
+        <p class="text-gray-400 mb-6">Termux Version - Mobile Friendly</p>
+        
+        <!-- Stats -->
+        <div class="card p-4 rounded-xl mb-6">
+            <h2 class="text-xl font-bold mb-3">Quick Stats</h2>
+            <div id="stats" class="text-lg">Loading...</div>
+            <button onclick="loadStats()" 
+                    class="mt-3 bg-blue-600 px-4 py-2 rounded-lg text-sm">Refresh</button>
+        </div>
+        
+        <!-- CAD Scanner -->
+        <div class="card p-4 rounded-xl mb-6 border border-green-600">
+            <h2 class="text-xl font-bold text-green-400 mb-2">🔍 CAD 1-Year Delinquent Scanner</h2>
+            <p class="text-sm text-gray-400 mb-3">Finds properties with 1+ year back taxes owed</p>
+            <button onclick="runCADScan()" 
+                    class="bg-green-600 px-6 py-3 rounded-xl font-bold w-full">
+                Run CAD Scan
+            </button>
+        </div>
+        
+        <!-- Search -->
+        <div class="card p-4 rounded-xl">
+            <h2 class="text-xl font-bold mb-3">Search Properties</h2>
+            <div class="flex gap-2">
+                <input id="searchInput" type="text" placeholder="Address or City" 
+                       class="flex-1 bg-zinc-800 border border-zinc-700 rounded-xl px-4 py-3 text-white">
+                <button onclick="searchProperties()" 
+                        class="bg-zinc-700 px-6 rounded-xl">Search</button>
+            </div>
+            <div id="results" class="mt-4 space-y-3"></div>
+        </div>
+    </div>
+
+    <script>
+        async function loadStats() {
+            const res = await fetch('/api/stats');
+            const data = await res.json();
+            document.getElementById('stats').innerHTML = `
+                <div>Total Properties: <span class="font-bold">${data.total_properties}</span></div>
+                <div>Total Tax Owed: <span class="font-bold text-red-400">$${data.total_tax_owed.toLocaleString()}</span></div>
+            `;
+        }
+
+        async function searchProperties() {
+            const query = document.getElementById('searchInput').value;
+            const res = await fetch('/api/search', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({query})
+            });
+            const data = await res.json();
+            
+            const container = document.getElementById('results');
+            container.innerHTML = '';
+            
+            if (data.results.length === 0) {
+                container.innerHTML = '<div class="text-gray-400">No results found</div>';
+                return;
+            }
+            
+            data.results.forEach(p => {
+                const div = document.createElement('div');
+                div.className = 'bg-zinc-800 p-4 rounded-xl';
+                div.innerHTML = `
+                    <div class="font-bold">${p.address}</div>
+                    <div class="text-sm text-gray-400">${p.city} • ${p.county}</div>
+                    <div class="mt-2 flex justify-between">
+                        <span class="text-red-400 font-bold">$${p.tax_owed.toLocaleString()}</span>
+                        <span class="text-xs bg-zinc-700 px-2 py-1 rounded">${p.years_delinquent} years delinquent</span>
+                    </div>
+                `;
+                container.appendChild(div);
+            });
+        }
+
+        async function runCADScan() {
+            const btns = document.querySelectorAll('button');
+            btns.forEach(b => b.disabled = true);
+            
+            const res = await fetch('/api/cad-scan', {method: 'POST'});
+            const data = await res.json();
+            
+            alert(`CAD Scan Complete! Found ${data.found} new properties with 1+ year back taxes.`);
+            loadStats();
+            
+            btns.forEach(b => b.disabled = false);
+        }
+
+        // Auto load stats on start
+        window.onload = () => {
+            loadStats();
+        }
+    </script>
+</body>
+</html>
